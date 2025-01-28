@@ -1,0 +1,14 @@
+[Unit]
+Description=Simple Python HTTP server on port 8000
+After=network.target autofs.service
+Requires=autofs.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m http.server 8000 --directory /mnt/smb
+Restart=always
+User=ubuntu
+Group=ubuntu
+
+[Install]
+WantedBy=multi-user.target

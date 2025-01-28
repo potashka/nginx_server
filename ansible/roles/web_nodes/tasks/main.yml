@@ -1,0 +1,66 @@
+---
+- name: Install cifs-utils and autofs
+  apt:
+    name:
+      - cifs-utils
+      - autofs
+    state: present
+    update_cache: yes
+
+- name: Create credentials file for Samba
+  copy:
+    dest: /etc/auto.smb.creds
+    content: |
+      username=smbuser
+      password={{ samba_password }}
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Deploy auto.master
+  template:
+    src: auto.master.j2
+    dest: /etc/auto.master
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Deploy auto.smb
+  template:
+    src: auto.smb.j2
+    dest: /etc/auto.smb
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Restart autofs
+  service:
+    name: autofs
+    state: restarted
+    enabled: yes
+
+- name: Install python3
+  apt:
+    name: python3
+    state: present
+    update_cache: yes
+
+########################################################
+# Запускаем python3 -m http.server через systemd
+########################################################
+- name: Deploy systemd unit for python server
+  template:
+    src: python-webserver.service.j2
+    dest: /etc/systemd/system/python-webserver.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload systemd daemon
+  command: systemctl daemon-reload
+
+- name: Enable & start python-webserver
+  service:
+    name: python-webserver
+    state: started
+    enabled: yes

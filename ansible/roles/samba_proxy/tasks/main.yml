@@ -1,0 +1,89 @@
+---
+- name: Install Samba
+  apt:
+    name: samba
+    state: present
+    update_cache: yes
+
+- name: Create local user for Samba
+  user:
+    name: smbuser
+    create_home: yes
+    shell: /bin/bash
+
+- name: Set Samba password (via expect)
+  block:
+    - name: Install expect (if not installed)
+      apt:
+        name: expect
+        state: present
+        update_cache: yes
+
+    - name: Run smbpasswd using expect
+      expect:
+        command: "smbpasswd -a smbuser"
+        responses:
+          (?i)Password: "{{ samba_password }}"
+          (?i)Retype.*: "{{ samba_password }}"
+
+- name: Backup original smb.conf
+  # При необходимости можно использовать copy с remote_src
+  copy:
+    src: /etc/samba/smb.conf
+    dest: /etc/samba/smb.conf.bak
+    remote_src: yes
+    force: yes
+  ignore_errors: yes
+
+- name: Deploy new smb.conf
+  template:
+    src: smb.conf.j2
+    dest: /etc/samba/smb.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Restart Samba
+  service:
+    name: smbd
+    state: restarted
+    enabled: yes
+
+######################################################
+# Установка и настройка Nginx (балансировщик)
+######################################################
+- name: Install Nginx
+  apt:
+    name: nginx
+    state: present
+    update_cache: yes
+
+- name: Backup original nginx.conf
+  copy:
+    src: /etc/nginx/nginx.conf
+    dest: /etc/nginx/nginx.conf.bak
+    remote_src: yes
+    force: yes
+  ignore_errors: yes
+
+- name: Configure Nginx as proxy/load-balancer
+  block:
+    - name: Create custom nginx.conf
+      template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Check Nginx config
+      command: nginx -t
+      register: nginx_check
+      changed_when: nginx_check.rc == 0
+      failed_when: nginx_check.rc != 0
+
+    - name: Restart Nginx
+      service:
+        name: nginx
+        state: restarted
+        enabled: yes

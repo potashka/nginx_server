@@ -1,0 +1,12 @@
+---
+- name: Configure Samba + Nginx (Proxy/Load balancer)
+  hosts: samba_proxy
+  become: yes
+  roles:
+    - samba_proxy
+
+- name: Configure Web nodes (CIFS, autofs, python3 server)
+  hosts: web_nodes
+  become: yes
+  roles:
+    - web_nodes

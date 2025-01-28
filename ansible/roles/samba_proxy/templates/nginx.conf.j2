@@ -1,0 +1,23 @@
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 768;
+}
+
+http {
+    upstream backend_servers {
+        server {{ web_node_1_ip }}:8000;
+        server {{ web_node_2_ip }}:8000;
+    }
+
+    server {
+        listen 80;
+        server_name _;
+
+        location / {
+            proxy_pass http://backend_servers;
+        }
+    }
+}
