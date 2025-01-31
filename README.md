@@ -61,6 +61,7 @@ nginx_server/
         │   └── templates/
         │       ├── smb.conf.j2
         │       └── nginx.conf.j2
+        |       └── testfile.txt.j2
         └── web_nodes/
             ├── tasks/
             │   └── main.yml
@@ -84,6 +85,20 @@ nginx_server/
      - `samba_proxy/` — устанавливает и настраивает Samba + Nginx.
      - `web_nodes/` — настраивает автомонтирование CIFS, запускает Python-сервер через systemd.
 
+***Пример задачи для создания тестового файла***
+В роли samba_proxy, в tasks/main.yml, есть такой блок:
+
+
+- name: Place test file in smbuser's home
+  become: yes
+  copy:
+    src: testfile.txt.j2
+    dest: /home/smbuser/testfile.txt
+    owner: smbuser
+    group: smbuser
+    mode: '0644'
+
+Тем самым Ansible кладёт подготовленный шаблон testfile.txt.j2 (в котором содержится текст «Hello from Samba server») в домашнюю директорию пользователя smbuser.
 ---
 
 ## Шаги развертывания
@@ -118,7 +133,7 @@ nginx_server/
    cd ../ansible
    ansible-playbook -i inventory.ini site.yml
    ```
-   - Ansible установит Samba, создаст пользователя `smbuser`, запустит Nginx на ВМ1 и настроит web-серверы на ВМ2, ВМ3 (cifs-utils, autofs, python-webserver через systemd).
+   - Ansible установит Samba, создаст пользователя `smbuser`, запустит Nginx на ВМ1 и настроит web-серверы на ВМ2, ВМ3 (cifs-utils, autofs, python-webserver через systemd), положит тестовый файл testfile.txt в /home/smbuser.
 
 ---
 
@@ -148,6 +163,26 @@ nginx_server/
    curl http://<PUBLIC_IP_OF_VM1>
    ```
    Ответы будут приходить с ВМ2 или ВМ3, где запущен Python-сервер.
+
+***Проверка работы и тестового файла***
+После выполнения плейбуков Ansible, вы можете убедиться, что всё работает:
+
+На веб-нодах (ВМ2 или ВМ3):
+
+ssh ubuntu@<IP_WEB_NODE>
+ls -l /mnt/smb
+Там должен находиться файл testfile.txt, созданный на ВМ1.
+
+Через Python-сервер (порт 8000):
+
+curl http://<IP_WEB_NODE>:8000/testfile.txt
+Если увидите текст, записанный в testfile.txt.j2 («Hello from Samba server»), значит веб-сервер действительно отдаёт содержимое папки /mnt/smb.
+
+Через Nginx (ВМ1, порт 80):
+
+curl http://<IP_SAMBA_PROXY>/testfile.txt
+
+Запрос будет сбалансирован на одну из веб-нод, а вы получите тот же файл. Обновляя страницу или повторяя curl, вы можете попасть то на ВМ2, то на ВМ3 (по умолчанию задан политика **round robin**).
 
 ---
 

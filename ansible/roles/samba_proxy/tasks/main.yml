@@ -1,4 +1,10 @@
 ---
+- name: Install python3-pexpect (for Ansible 'expect' usage)
+  apt:
+    name: python3-pexpect
+    state: present
+    update_cache: yes
+
 - name: Install Samba
   apt:
     name: samba
@@ -10,6 +16,15 @@
     name: smbuser
     create_home: yes
     shell: /bin/bash
+
+- name: Place test file in smbuser's home
+  become: yes
+  copy:
+    src: testfile.txt.j2
+    dest: /home/smbuser/testfile.txt
+    owner: smbuser
+    group: smbuser
+    mode: '0644'
 
 - name: Set Samba password (via expect)
   block:

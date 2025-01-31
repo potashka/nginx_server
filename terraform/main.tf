@@ -40,14 +40,14 @@ resource "yandex_compute_instance" "vm1" {
   platform_id = "standard-v2"
 
   resources {
-    cores  = 1
-    memory = 1
+    cores  = 2
+    memory = 2
   }
 
   boot_disk {
     initialize_params {
       image_id = data.yandex_compute_image.custom_image.id
-      size     = 20
+      size     = 30
     }
   }
 
@@ -66,14 +66,14 @@ resource "yandex_compute_instance" "vm2" {
   platform_id = "standard-v2"
 
   resources {
-    cores  = 1
-    memory = 1
+    cores  = 2
+    memory = 2
   }
 
   boot_disk {
     initialize_params {
       image_id = data.yandex_compute_image.custom_image.id
-      size     = 20
+      size     = 30
     }
   }
 
@@ -92,14 +92,14 @@ resource "yandex_compute_instance" "vm3" {
   platform_id = "standard-v2"
 
   resources {
-    cores  = 1
-    memory = 1
+    cores  = 2
+    memory = 2
   }
 
   boot_disk {
     initialize_params {
       image_id = data.yandex_compute_image.custom_image.id
-      size     = 20
+      size     = 30
     }
   }
 
