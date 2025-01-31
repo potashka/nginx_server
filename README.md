@@ -70,6 +70,7 @@ sudo nano /etc/samba/smb.conf
    path = /home/smbuser
    browseable = yes
    writable = no
+   read only = yes
    guest ok = no
    valid users = smbuser
 ```
@@ -102,7 +103,7 @@ sudo nano /etc/smb-credentials
 Добавляем:
 ```plaintext
 username=smbuser
-password=Passw0rd!
+password=*****
 ```
 Устанавливаем правильные права:
 ```bash
@@ -115,7 +116,7 @@ sudo nano /etc/auto.smb.shares
 ```
 Добавляем:
 ```
-smbshare -fstype=cifs,rw,credentials=/etc/smb-credentials ://89.169.146.181/smbshare
+smbuser -fstype=cifs,rw,credentials=/etc/smb-credentials ://89.169.146.181/smbshare
 ```
 
 ### **3.5. Настройка `/etc/auto.master`**
