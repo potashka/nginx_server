@@ -1,7 +1,270 @@
 # Проект: Nginx-сервер с балансировкой и Samba-файловым хранилищем
 
-## Описание и цель
-Данный проект автоматизирует развёртывание и настройку трех виртуальных машин в Яндекс.Облаке (Yandex Cloud) при помощи **Terraform** и **Ansible**. В результате получается решение, где:
+Проект создан в YandexCloud.
+Потестировать можно адреса
+http://89.169.146.181 # samba_proxy
+http://51.250.88.60 # VM 2
+http://51.250.12.24 # VM 3
+
+# Создание проекта с ручной настройкой машин
+
+# **Настройка инфраструктуры: Samba + Autofs + Nginx + Python HTTP-сервер**
+Этот документ описывает процесс настройки **файлового сервера Samba**, **автоматического монтирования CIFS (autofs)** и **прокси-сервера Nginx** для балансировки нагрузки между двумя веб-серверами.
+
+---
+
+## **1. Создание виртуальных машин в Yandex Cloud**
+Виртуальные машины создавались с помощью **Terraform**. После успешного создания можно получить IP-адреса с помощью:
+```bash
+terraform output
+```
+Вывод:
+```plaintext
+vm1_external_ip = "89.169.146.181"
+vm1_internal_ip = "10.128.0.10"
+vm2_external_ip = "51.250.88.60"
+vm2_internal_ip = "10.128.0.3"
+vm3_external_ip = "51.250.12.24"
+vm3_internal_ip = "10.128.0.9"
+```
+
+---
+
+## **2. Настройка файлового сервера (Samba) на VM1**
+### **2.1. Подключение к VM1**
+```bash
+ssh ubuntu@89.169.146.181
+```
+
+### **2.2. Установка Samba**
+```bash
+sudo apt update
+sudo apt install -y samba
+```
+
+### **2.3. Создание пользователя для Samba**
+```bash
+sudo useradd -m smbuser
+sudo passwd smbuser  # Задаем пароль
+sudo smbpasswd -a smbuser  # Добавляем пользователя в Samba
+```
+
+Создание тестового файла 
+```bash
+sudo -u smbuser touch /home/smbuser/testfile.txt
+echo "Hello from Samba server" | sudo tee /home/smbuser/testfile.txt
+```
+
+### **2.4. Настройка Samba**
+Редактируем конфигурационный файл:
+```bash
+sudo nano /etc/samba/smb.conf
+```
+Добавляем:
+```ini
+[global]
+   workgroup = WORKGROUP
+   security = user
+
+[smbshare]
+   path = /home/smbuser
+   browseable = yes
+   writable = no
+   guest ok = no
+   valid users = smbuser
+```
+Применяем настройки:
+```bash
+sudo systemctl restart smbd
+sudo systemctl enable smbd
+```
+
+---
+
+## **3. Настройка автомонтирования (autofs) на VM2 и VM3**
+### **3.1. Подключение**
+```bash
+ssh ubuntu@51.250.88.60  # VM2
+# или
+ssh ubuntu@51.250.12.24  # VM3
+```
+
+### **3.2. Установка autofs и CIFS-utils**
+```bash
+sudo apt update
+sudo apt install -y autofs cifs-utils
+```
+
+### **3.3. Создание файла `/etc/smb-credentials`**
+```bash
+sudo nano /etc/smb-credentials
+```
+Добавляем:
+```plaintext
+username=smbuser
+password=Passw0rd!
+```
+Устанавливаем правильные права:
+```bash
+sudo chmod 600 /etc/smb-credentials
+```
+
+### **3.4. Настройка `/etc/auto.smb.shares`**
+```bash
+sudo nano /etc/auto.smb.shares
+```
+Добавляем:
+```
+smbshare -fstype=cifs,rw,credentials=/etc/smb-credentials ://89.169.146.181/smbshare
+```
+
+### **3.5. Настройка `/etc/auto.master`**
+```bash
+sudo nano /etc/auto.master
+```
+Добавляем строку:
+```
+/mnt/smb /etc/auto.smb.shares --timeout=60 --ghost
+```
+
+### **3.6. Перезапуск autofs**
+```bash
+sudo systemctl restart autofs
+```
+
+### **3.7. Проверка монтирования**
+```bash
+ls -l /mnt/smb
+```
+
+---
+
+## **4. Настройка Python HTTP-серверов на VM2 и VM3**
+### **4.1. Подключение**
+```bash
+ssh ubuntu@51.250.88.60  # VM2
+# или
+ssh ubuntu@51.250.12.24  # VM3
+```
+
+### **4.2. Создание systemd-сервиса для HTTP-сервера**
+```bash
+sudo nano /etc/systemd/system/http-server.service
+```
+Добавляем:
+```ini
+[Unit]
+Description=Simple Python HTTP Server
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/mnt/smb
+ExecStart=/usr/bin/python3 -m http.server 8000 --directory /mnt/smb
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### **4.3. Запуск сервиса**
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable http-server
+sudo systemctl start http-server
+```
+
+### **4.4. Проверка работы сервера**
+```bash
+curl http://localhost:8000
+```
+
+---
+
+## **5. Настройка прокси-сервера и балансировки нагрузки (Nginx) на VM1**
+### **5.1. Подключение к VM1**
+```bash
+ssh ubuntu@89.169.146.181
+```
+
+### **5.2. Установка Nginx**
+```bash
+sudo apt update
+sudo apt install -y nginx
+```
+
+### **5.3. Настройка конфигурации Nginx**
+```bash
+sudo nano /etc/nginx/nginx.conf
+```
+Добавляем:
+```nginx
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+    worker_connections 768;
+}
+
+http {
+    upstream backend_servers {
+        server 51.250.88.60:8000;  # VM2
+        server 51.250.12.24:8000;  # VM3
+    }
+
+    server {
+        listen 80;
+        server_name _;
+
+        location / {
+            proxy_pass http://backend_servers;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+}
+```
+
+### **5.4. Перезапуск Nginx**
+```bash
+sudo nginx -t  # Проверяем конфиг
+sudo systemctl restart nginx
+```
+
+---
+
+## **6. Открытие портов в Yandex Cloud**
+
+Как правило, машины запускаются с открырми портами
+
+---
+
+## **7. Финальная проверка**
+### **7.1. Проверить Samba**
+```bash
+smbclient -L //89.169.146.181 -U smbuser
+```
+
+### **7.2. Проверить доступ к веб-серверам**
+```bash
+curl http://51.250.88.60:8000
+curl http://51.250.12.24:8000
+```
+
+### **7.3. Проверить балансировку Nginx**
+```bash
+curl http://89.169.146.181
+```
+При нескольких запросах страницы должны приходить **то с VM2, то с VM3**.
+
+
+# Автоматизированная натсройка
+
+Альтернативный проект автоматизирует развёртывание и настройку трех виртуальных машин в Яндекс.Облаке (Yandex Cloud) при помощи **Terraform** и **Ansible**. В результате получается решение, где:
 1. **ВМ1** (samba-proxy) — выполняет роль Samba-файлового сервера и Nginx-прокси/балансировщика.
 2. **ВМ2** (web-node-1) и **ВМ3** (web-node-2) — монтируют общую Samba-папку и запускают простой веб-сервер (`python3 -m http.server`), чтобы Nginx на ВМ1 мог балансировать запросы между ними.
 
